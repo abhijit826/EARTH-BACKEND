@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Earthquake Frequency Prediction Dashboard</title>
+
+<!-- Leaflet -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css">
+
+<!-- Google Font -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+
+<style>
+body {
+    margin: 0;
+    font-family: 'Inter', sans-serif;
+    background: #f4f6f9;
+}
+
+header {
+    background: #0b3c5d;
+    color: white;
+    padding: 15px;
+    text-align: center;
+}
+
+#container {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    height: calc(100vh - 70px);
+}
+
+#sidebar {
+    background: white;
+    padding: 20px;
+    box-shadow: 2px 0 8px rgba(0,0,0,0.1);
+}
+
+#map {
+    height: 100%;
+}
+
+.card {
+    margin-bottom: 20px;
+}
+
+.card small{
+    color: #f10505;
+}
+.card h3 {
+    margin: 0 0 10px 0;
+}
+
+label {
+    font-weight: 600;
+}
+
+input[type=range] {
+    width: 100%;
+}
+
+button {
+    width: 100%;
+    padding: 12px;
+    background: #0b3c5d;
+    color: white;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    border-radius: 4px;
+}
+
+button:hover {
+    background: #09314d;
+}
+
+.result {
+    background: #eef4fa;
+    padding: 15px;
+    border-radius: 5px;
+}
+
+.spinner {
+    display: none;
+    text-align: center;
+}
+
+.spinner div {
+    width: 30px;
+    height: 30px;
+    border: 4px solid #ccc;
+    border-top: 4px solid #0b3c5d;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin: auto;
+}
+
+@keyframes spin {
+    100% { transform: rotate(360deg); }
+}
+
+small {
+    color: #def108;
+}
+</style>
+</head>
+
+<body>
+
+<header>
+    <h2>Monthly Earthquake Frequency Prediction Dashboard</h2>
+    <small><b> Machine Learning–based Seismic Trend Estimation </b> </small>
+</header>
+
+<div id="container">
+
+<!-- SIDEBAR -->
+<div id="sidebar">
+
+    <div class="card">
+        <h3>Selected Region</h3>
+        <div id="regionInfo">Draw a rectangle on the map</div>
+    </div>
+
+    <div class="card">
+        <label>Minimum Magnitude: <span id="magValue">3.0</span></label>
+        <input type="range" min="3" max="6.5" step="0.1" value="3.0" id="magSlider">
+    </div>
+
+    <div class="card">
+        <button onclick="predictFrequency()">Estimate Earthquake Frequency</button>
+    </div>
+
+    <div class="card spinner" id="loading">
+        <div></div>
+        <p>Processing seismic data…</p>
+    </div>
+
+    <div class="card result" id="resultBox" style="display:none;">
+        <h3>Prediction Result</h3>
+        <p id="resultText"></p>
+        <small id="resultNote"></small>
+    </div>
+
+    <div class="card">
+        <small>
+            ⚠ This system estimates expected monthly earthquake frequency based on historical data.  
+            It does NOT provide real-time prediction or early warning.
+        </small>
+    </div>
+
+</div>
+
+<!-- MAP -->
+<div id="map"></div>
+
+</div>
+
+<!-- JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+
+<script>
+var map = L.map('map').setView([22.5, 78.9], 5);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+var drawnItems = new L.FeatureGroup();
+map.addLayer(drawnItems);
+
+var drawControl = new L.Control.Draw({
+    draw: {
+        rectangle: true,
+        polygon: false,
+        polyline: false,
+        circle: false,
+        marker: false,
+        circlemarker: false
+    },
+    edit: { featureGroup: drawnItems }
+});
+map.addControl(drawControl);
+
+var selectedBounds = null;
+
+map.on(L.Draw.Event.CREATED, function(e) {
+    drawnItems.clearLayers();
+    drawnItems.addLayer(e.layer);
+    selectedBounds = e.layer.getBounds();
+    document.getElementById("regionInfo").innerHTML =
+        `Lat: ${selectedBounds.getSouth().toFixed(2)} – ${selectedBounds.getNorth().toFixed(2)}<br>
+         Lon: ${selectedBounds.getWest().toFixed(2)} – ${selectedBounds.getEast().toFixed(2)}`;
+});
+
+document.getElementById("magSlider").oninput = function() {
+    document.getElementById("magValue").innerText = this.value;
+};
+
+function predictFrequency() {
+    if (!selectedBounds) {
+        alert("Please select a region on the map.");
+        return;
+    }
+
+    document.getElementById("loading").style.display = "block";
+    document.getElementById("resultBox").style.display = "none";
+
+    fetch("https://earth-backend-9kz9.onrender.com/predict-frequency", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+            min_lat: selectedBounds.getSouth(),
+            max_lat: selectedBounds.getNorth(),
+            min_lon: selectedBounds.getWest(),
+            max_lon: selectedBounds.getEast(),
+            min_mag: parseFloat(document.getElementById("magSlider").value)
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        document.getElementById("loading").style.display = "none";
+        document.getElementById("resultBox").style.display = "block";
+        document.getElementById("resultText").innerHTML =
+            `<b>Estimated Monthly Earthquake Frequency:</b> ${data.estimated_monthly_frequency}`;
+        document.getElementById("resultNote").innerText = data.note;
+    })
+    .catch(() => {
+        document.getElementById("loading").style.display = "none";
+        alert("Backend connection failed. Try smaller region.");
+    });
+}
+</script>
+
+</body>
+</html>
